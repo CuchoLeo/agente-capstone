@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ agent_name }} - Co-piloto de Ventas Solventum</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>🏥 {{ agent_name }}</h2>
+                <p class="subtitle">Co-piloto de Ventas</p>
+            </div>
+            
+            <div class="quick-questions">
+                <h3>Preguntas Rápidas</h3>
+                <ul>
+                    {% for question in quick_questions %}
+                    <li class="quick-question-item" onclick="sendQuickQuestion('{{ question }}')">
+                        {{ question }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <div class="stats-panel">
+                <h3>Estadísticas</h3>
+                <div id="stats-content">
+                    <p>Cargando...</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-container">
+            <div class="chat-header">
+                <h1>Asistente de Predicción de Demanda</h1>
+                <p>Optimiza tus visitas con predicciones basadas en datos de ChileCompra</p>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        <p>👋 ¡Hola! Soy tu asistente de predicción de demanda para Solventum.</p>
+                        <p>Puedo ayudarte a:</p>
+                        <ul>
+                            <li>Identificar hospitales con mayor demanda proyectada</li>
+                            <li>Predecir necesidades de productos específicos</li>
+                            <li>Sugerir oportunidades de venta</li>
+                            <li>Analizar tendencias de consumo</li>
+                        </ul>
+                        <p>¿En qué te puedo ayudar hoy?</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <form id="chatForm" onsubmit="sendMessage(event)">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        placeholder="Pregunta algo... ej: ¿Qué hospitales necesitarán apósitos este mes?"
+                        autocomplete="off"
+                        required
+                    >
+                    <button type="submit" id="sendButton">
+                        <span id="sendIcon">➤</span>
+                        <span id="loadingIcon" style="display: none;">⏳</span>
+                    </button>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

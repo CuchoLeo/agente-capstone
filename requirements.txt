@@ -1,6 +1,7 @@
 # Flask & Web
 Flask==3.0.0
 flask-cors==4.0.0
+gunicorn==21.2.0
 
 # Google Cloud & Vertex AI
 google-cloud-aiplatform==1.38.1
