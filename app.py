@@ -8,11 +8,25 @@ import os
 import logging
 from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
-import vertexai
-from vertexai.generative_models import GenerativeModel, ChatSession
 from database import get_connection
-from db_utils import get_predicciones_hospital, get_top_demanda_producto, log_consulta_copiloto
+from db_utils import (
+    get_predicciones_hospital, 
+    get_top_demanda_producto, 
+    log_consulta_copiloto,
+    get_all_hospitales_ranking,
+    get_predicciones_producto_mes,
+    get_predicciones_proximas,
+    get_resumen_producto
+)
 import config
+import pandas as pd
+
+# Importar según el modo de autenticación
+if config.USE_VERTEX_AI:
+    import vertexai
+    from vertexai.generative_models import GenerativeModel, ChatSession
+else:
+    import google.generativeai as genai
 
 # Configurar logging
 logging.basicConfig(
@@ -31,15 +45,23 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['SESSION_TYPE'] = config.SESSION_TYPE
 CORS(app, origins=config.CORS_ORIGINS)
 
-# Inicializar Vertex AI
-try:
-    vertexai.init(project=config.GOOGLE_CLOUD_PROJECT, location=config.VERTEX_AI_LOCATION)
-    logger.info(f"Vertex AI inicializado: {config.GOOGLE_CLOUD_PROJECT} en {config.VERTEX_AI_LOCATION}")
-except Exception as e:
-    logger.error(f"Error inicializando Vertex AI: {e}")
-
-# Modelo Gemini
-model = GenerativeModel(config.GEMINI_MODEL)
+# Inicializar Gemini según el modo
+if config.USE_VERTEX_AI:
+    try:
+        vertexai.init(project=config.GOOGLE_CLOUD_PROJECT, location=config.VERTEX_AI_LOCATION)
+        model = GenerativeModel(config.GEMINI_MODEL)
+        logger.info(f"Vertex AI inicializado: {config.GOOGLE_CLOUD_PROJECT} en {config.VERTEX_AI_LOCATION}")
+    except Exception as e:
+        logger.error(f"Error inicializando Vertex AI: {e}")
+        model = None
+else:
+    try:
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        model = genai.GenerativeModel(config.GEMINI_MODEL)
+        logger.info(f"Gemini API configurado con modelo: {config.GEMINI_MODEL}")
+    except Exception as e:
+        logger.error(f"Error configurando Gemini API: {e}")
+        model = None
 
 # Diccionario para almacenar sesiones de chat por usuario
 chat_sessions = {}
@@ -57,68 +79,140 @@ def get_chat_session(user_id):
 
 def get_context_for_query(query):
     """
-    Obtiene contexto relevante de la base de datos para una consulta
+    Obtiene contexto relevante de la base de datos para una consulta.
+    
+    Esta función analiza la pregunta del usuario y consulta la BD para traer
+    datos REALES que el agente puede usar en su respuesta.
     """
     context = {
-        'predicciones': [],
-        'hospitales': [],
-        'productos': []
+        'predicciones_detalle': pd.DataFrame(),
+        'ranking_hospitales': pd.DataFrame(),
+        'resumen': {},
+        'tipo_consulta': 'general'
     }
     
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # Detectar entidades en la query (hospital, producto, etc)
         query_lower = query.lower()
         
-        # Si menciona un hospital específico
-        if 'salvador' in query_lower:
-            context['predicciones'] = get_predicciones_hospital("Hospital del Salvador")
-        elif 'sótero' in query_lower or 'sotero' in query_lower:
-            context['predicciones'] = get_predicciones_hospital("Complejo Asistencial Dr. Sótero del Río")
-        
-        # Si menciona un producto
-        if 'apósito' in query_lower or 'aposito' in query_lower:
-            context['productos'] = get_top_demanda_producto("APOSITOS", limit=5)
+        # Detectar si pregunta por un PRODUCTO específico
+        producto_detectado = None
+        if 'apósito' in query_lower or 'aposito' in query_lower or 'tegaderm' in query_lower:
+            producto_detectado = 'APOSITOS'
+            context['tipo_consulta'] = 'producto_apositos'
         elif 'guante' in query_lower:
-            context['productos'] = get_top_demanda_producto("GUANTES_MEDICOS", limit=5)
+            producto_detectado = 'GUANTES_MEDICOS'
+            context['tipo_consulta'] = 'producto_guantes'
         
-        # Obtener lista de hospitales con mayor demanda general
-        cursor.execute("""
-            SELECT DISTINCT hospital 
-            FROM predicciones_demanda 
-            ORDER BY hospital 
-            LIMIT 10
-        """)
-        context['hospitales'] = [row[0] for row in cursor.fetchall()]
+        # Detectar si pregunta por un HOSPITAL específico
+        hospital_detectado = None
+        if 'salvador' in query_lower:
+            hospital_detectado = "Hospital del Salvador"
+            context['tipo_consulta'] = 'hospital_especifico'
+        elif 'sótero' in query_lower or 'sotero' in query_lower:
+            hospital_detectado = "Complejo Asistencial Dr. Sótero del Río"
+            context['tipo_consulta'] = 'hospital_especifico'
+        elif 'san josé' in query_lower or 'san jose' in query_lower:
+            hospital_detectado = "Hospital San José"
+            context['tipo_consulta'] = 'hospital_especifico'
+        elif 'barros luco' in query_lower:
+            hospital_detectado = "Hospital Barros Luco-Trudeau"
+            context['tipo_consulta'] = 'hospital_especifico'
         
-        cursor.close()
-        conn.close()
+        # CONSULTA 1: Si pregunta por un producto específico
+        if producto_detectado:
+            # Obtener ranking completo de hospitales para ese producto
+            context['ranking_hospitales'] = get_all_hospitales_ranking(producto=producto_detectado)
+            
+            # Obtener predicciones detalladas del próximo mes
+            context['predicciones_detalle'] = get_predicciones_proximas(dias=90, producto=producto_detectado)
+            
+            # Obtener resumen estadístico
+            context['resumen'] = get_resumen_producto(producto_detectado)
+            
+            logger.info(f"Contexto para {producto_detectado}: {len(context['ranking_hospitales'])} hospitales, {len(context['predicciones_detalle'])} predicciones")
+        
+        # CONSULTA 2: Si pregunta por un hospital específico
+        elif hospital_detectado:
+            context['predicciones_detalle'] = get_predicciones_hospital(hospital_detectado)
+            logger.info(f"Contexto para {hospital_detectado}: {len(context['predicciones_detalle'])} predicciones")
+        
+        # CONSULTA 3: Pregunta general (traer datos de TODOS los productos/hospitales)
+        else:
+            # Si menciona palabras como "qué", "cuál", "necesitar", traer ranking general
+            if any(word in query_lower for word in ['qué', 'que', 'cuál', 'cual', 'necesitar', 'demandar', 'comprar']):
+                # Traer ranking de hospitales por demanda total
+                context['ranking_hospitales'] = get_all_hospitales_ranking()
+                
+                # Traer todas las predicciones próximas
+                context['predicciones_detalle'] = get_predicciones_proximas(dias=90)
+                
+                logger.info(f"Contexto general: {len(context['ranking_hospitales'])} hospitales, {len(context['predicciones_detalle'])} predicciones")
         
     except Exception as e:
-        logger.error(f"Error obteniendo contexto: {e}")
+        logger.error(f"Error obteniendo contexto de BD: {e}", exc_info=True)
     
     return context
 
 def build_context_string(context):
-    """Construye un string de contexto para incluir en el prompt"""
+    """
+    Construye un string formateado con los datos de la BD para incluir en el prompt.
+    Este será el contexto REAL que Gemini usará para responder.
+    """
     parts = []
     
-    if context['predicciones'] and not context['predicciones'].empty:
-        parts.append("PREDICCIONES RELEVANTES:")
-        for _, pred in context['predicciones'].iterrows():
-            parts.append(f"- {pred['hospital']}: {pred['producto']} - {pred['demanda_estimada']} unidades (confianza: {pred['confidence_score']}%)")
+    # 1. Ranking de hospitales (si existe)
+    if isinstance(context['ranking_hospitales'], pd.DataFrame) and not context['ranking_hospitales'].empty:
+        parts.append("=== DATOS REALES DE LA BASE DE DATOS ===\n")
+        parts.append("📊 RANKING DE HOSPITALES POR DEMANDA ESTIMADA (próximos 3 meses):")
+        
+        for idx, row in context['ranking_hospitales'].iterrows():
+            parts.append(
+                f"  {idx+1}. {row['hospital']}: "
+                f"{int(row['demanda_total'])} unidades totales "
+                f"(confianza: {row['confidence_promedio']:.1f}%)"
+            )
+        
+        parts.append("")  # Línea en blanco
     
-    if context['productos'] and not context['productos'].empty:
-        parts.append("\nHOSPITALES CON MAYOR DEMANDA:")
-        for _, prod in context['productos'].iterrows():
-            parts.append(f"- {prod['hospital']}: {prod['demanda_total']} unidades estimadas")
+    # 2. Predicciones detalladas (si existen)
+    if isinstance(context['predicciones_detalle'], pd.DataFrame) and not context['predicciones_detalle'].empty:
+        parts.append("📅 PREDICCIONES DETALLADAS:")
+        
+        # Agrupar por hospital para mejor legibilidad
+        for hospital in context['predicciones_detalle']['hospital'].unique()[:7]:  # Top 7
+            hospital_preds = context['predicciones_detalle'][
+                context['predicciones_detalle']['hospital'] == hospital
+            ]
+            
+            parts.append(f"\n  🏥 {hospital}:")
+            for _, pred in hospital_preds.iterrows():
+                fecha = pred['fecha_prediccion'].strftime('%Y-%m') if hasattr(pred['fecha_prediccion'], 'strftime') else str(pred['fecha_prediccion'])
+                parts.append(
+                    f"     • {pred['producto']}: {int(pred['demanda_estimada'])} unidades "
+                    f"({fecha})"
+                )
+        
+        parts.append("")
     
-    if context['hospitales']:
-        parts.append(f"\nHOSPITALES EN EL SISTEMA: {', '.join(context['hospitales'][:5])}")
+    # 3. Resumen estadístico (si existe)
+    if context['resumen']:
+        parts.append("📈 RESUMEN ESTADÍSTICO:")
+        res = context['resumen']
+        if 'demanda_total' in res:
+            parts.append(f"  • Demanda total estimada: {int(res['demanda_total'])} unidades")
+        if 'num_hospitales' in res:
+            parts.append(f"  • Hospitales involucrados: {int(res['num_hospitales'])}")
+        if 'demanda_promedio' in res:
+            parts.append(f"  • Demanda promedio por hospital: {int(res['demanda_promedio'])} unidades")
+        parts.append("")
+    
+    # 4. Instrucción para el agente
+    if parts:
+        parts.append("⚠️ IMPORTANTE: Usa SOLO estos datos reales de la base de datos para responder.")
+        parts.append("Menciona números específicos, hospitales y fechas exactas de las predicciones.\n")
     
     return "\n".join(parts) if parts else ""
+
 
 @app.route('/')
 def index():

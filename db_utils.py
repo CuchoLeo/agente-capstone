@@ -167,6 +167,153 @@ def log_consulta_copiloto(usuario, consulta, respuesta):
     cursor.close()
     conn.close()
 
+def get_predicciones_producto_mes(producto, limit=10):
+    """
+    Obtiene ranking de hospitales con mayor demanda estimada para un producto
+    incluyendo el desglose por mes
+    
+    Args:
+        producto: Código del producto (ej: 'APOSITOS', 'GUANTES_MEDICOS')
+        limit: Número máximo de hospitales a retornar
+        
+    Returns:
+        DataFrame con columnas: hospital, producto, fecha_prediccion, demanda_estimada, confidence_score
+    """
+    conn = get_connection()
+    
+    query = """
+    SELECT 
+        hospital,
+        producto,
+        fecha_prediccion,
+        demanda_estimada,
+        confidence_score
+    FROM predicciones_demanda
+    WHERE producto = %s
+    ORDER BY fecha_prediccion, demanda_estimada DESC
+    LIMIT %s
+    """
+    
+    df = pd.read_sql_query(query, conn, params=(producto, limit))
+    conn.close()
+    return df
+
+def get_all_hospitales_ranking(producto=None):
+    """
+    Obtiene ranking de TODOS los hospitales con su demanda total estimada
+    
+    Args:
+        producto: Opcional - filtrar por producto específico
+        
+    Returns:
+        DataFrame con columnas: hospital, demanda_total, num_predicciones
+    """
+    conn = get_connection()
+    
+    if producto:
+        query = """
+        SELECT 
+            hospital,
+            SUM(demanda_estimada) as demanda_total,
+            COUNT(*) as num_predicciones,
+            AVG(confidence_score) as confidence_promedio
+        FROM predicciones_demanda
+        WHERE producto = %s
+        GROUP BY hospital
+        ORDER BY demanda_total DESC
+        """
+        df = pd.read_sql_query(query, conn, params=(producto,))
+    else:
+        query = """
+        SELECT 
+            hospital,
+            SUM(demanda_estimada) as demanda_total,
+            COUNT(*) as num_predicciones,
+            AVG(confidence_score) as confidence_promedio
+        FROM predicciones_demanda
+        GROUP BY hospital
+        ORDER BY demanda_total DESC
+        """
+        df = pd.read_sql_query(query, conn)
+    
+    conn.close()
+    return df
+
+def get_predicciones_proximas(dias=30, producto=None):
+    """
+    Obtiene predicciones para los próximos N días
+    
+    Args:
+        dias: Número de días hacia adelante
+        producto: Opcional - filtrar por producto
+        
+    Returns:
+        DataFrame con todas las predicciones en el rango de fechas
+    """
+    conn = get_connection()
+    
+    if producto:
+        query = """
+        SELECT 
+            hospital,
+            producto,
+            fecha_prediccion,
+            demanda_estimada,
+            confidence_score
+        FROM predicciones_demanda
+        WHERE fecha_prediccion <= CURRENT_DATE + INTERVAL '%s days'
+          AND producto = %s
+        ORDER BY fecha_prediccion, hospital
+        """
+        df = pd.read_sql_query(query, conn, params=(dias, producto))
+    else:
+        query = """
+        SELECT 
+            hospital,
+            producto,
+            fecha_prediccion,
+            demanda_estimada,
+            confidence_score
+        FROM predicciones_demanda
+        WHERE fecha_prediccion <= CURRENT_DATE + INTERVAL '%s days'
+        ORDER BY fecha_prediccion, producto, hospital
+        """
+        df = pd.read_sql_query(query, conn, params=(dias,))
+    
+    conn.close()
+    return df
+
+def get_resumen_producto(producto):
+    """
+    Obtiene un resumen completo de predicciones para un producto
+    
+    Args:
+        producto: Código del producto
+        
+    Returns:
+        dict con información agregada del producto
+    """
+    conn = get_connection()
+    
+    query = """
+    SELECT 
+        COUNT(DISTINCT hospital) as num_hospitales,
+        SUM(demanda_estimada) as demanda_total,
+        AVG(demanda_estimada) as demanda_promedio,
+        MIN(fecha_prediccion) as fecha_inicio,
+        MAX(fecha_prediccion) as fecha_fin,
+        AVG(confidence_score) as confidence_promedio
+    FROM predicciones_demanda
+    WHERE producto = %s
+    """
+    
+    df = pd.read_sql_query(query, conn, params=(producto,))
+    conn.close()
+    
+    if not df.empty:
+        return df.iloc[0].to_dict()
+    return {}
+
 if __name__ == "__main__":
     # Crear tablas
     create_tables()
