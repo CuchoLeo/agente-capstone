@@ -35,22 +35,26 @@ Este proyecto desarrolla un **asistente conversacional basado en IA** que permit
 
 ### Pipeline de Datos
 ```
-ChileCompra (OC históricas)
+Datos Históricos (ordenes_compra)
     ↓
-Limpieza y Normalización
+Estandarización de Productos
     ↓
-Estandarización Semántica (RegEx + Embeddings)
+Modelo Predictivo (Regresión Lineal)
+  • Tendencia temporal
+  • Estacionalidad mensual
+  • Hospital (one-hot encoding)
+  • Producto (one-hot encoding)
     ↓
-Matching con Catálogo Solventum (Similitud Coseno >0.85)
+Predicciones de Demanda (predicciones_demanda)
     ↓
-Análisis de Series Temporales
-    ↓
-Modelo Predictivo (Demanda por Hospital × Producto)
-    ↓
-Sistema RAG (ChromaDB)
-    ↓
-Asistente Conversacional (Gemini)
+Asistente Conversacional (Gemini + Context Retrieval)
 ```
+
+### Modelo Predictivo
+- **Tipo:** Regresión Lineal (scikit-learn)
+- **Precisión:** R² = 0.902 (90.2%)
+- **MAE:** 38.6 unidades
+- **Features:** 12 (tendencia + estacionalidad + hospital + producto)
 
 ### Validación
 - **Precisión del modelo de estandarización:** 95% (validado con 400 registros)
@@ -68,9 +72,11 @@ Procesa descripciones en texto libre como:
 ```
 
 ### 2. Predicción de Demanda
-- Granularidad: **Hospital × Producto × Tiempo**
-- Productos ejemplo: Apósitos, Guantes Médicos, Film Transparente
-- Volúmenes: Hasta 2M+ unidades mensuales por hospital
+- **Modelo:** Regresión Lineal con scikit-learn
+- **Precisión:** 90.2% (R² = 0.902)
+- **Granularidad:** Hospital × Producto × Tiempo
+- **Productos:** Apósitos, Guantes Médicos
+- **Predicciones:** 3 meses adelante
 
 ### 3. Co-piloto de Ventas
 Consultas en lenguaje natural:
@@ -107,13 +113,16 @@ Este proyecto adapta la arquitectura de [agente-plastico](https://github.com/Cuc
 ```
 agente-capstone/
 ├── app.py                    # Aplicación Flask principal
-├── storage.py                # Gestión de GCS y ChromaDB
+├── predictor.py              # [NUEVO] Modelo predictivo (scikit-learn)
+├── train_model.py            # [NUEVO] Script de entrenamiento
+├── seed_data.py              # Generador de datos históricos
+├── database.py               # Conexión a PostgreSQL (AWS RDS)
+├── db_utils.py               # Utilidades de BD
 ├── config.py                 # Configuración y parámetros
 ├── requirements.txt          # Dependencias Python
-├── Dockerfile                # Containerización
+├── models/                   # [NUEVO] Modelos entrenados
+│   └── demand_model.pkl
 ├── docs/                     # Documentación del proyecto
-│   └── Ultima_verion-Informe - Predicción Demanda Insumos Médicos.pdf
-├── scripts/                  # Scripts de deployment e indexación
 ├── static/                   # Archivos estáticos (CSS, JS)
 └── templates/                # Templates HTML
 ```
@@ -122,23 +131,90 @@ agente-capstone/
 
 ## 🛠️ Estado del Proyecto
 
-🚧 **En desarrollo**
+✅ **Modelo Predictivo Funcional**
 
 ### Completado
 - [x] Análisis de requisitos
 - [x] Especificaciones técnicas
-- [x] Revisión de arquitectura base (agente-plastico)
+- [x] Base de datos PostgreSQL (AWS RDS)
+- [x] **Modelo predictivo con regresión lineal (R² 0.902)**
+- [x] **Generación de datos históricos realistas**
+- [x] **Pipeline de entrenamiento y predicción**
+- [x] Interfaz conversacional (Flask + Gemini)
+- [x] API endpoints para consultas
 
-### En Progreso
-- [ ] Implementación de pipeline de estandarización
-- [ ] Modelo predictivo de series temporales
-- [ ] Sistema RAG con ChromaDB
-- [ ] Interfaz conversacional
-
-### Pendiente
+### Próximos Pasos
+- [ ] Integración con datos reales de ChileCompra
+- [ ] Sistema RAG con ChromaDB para documentos
 - [ ] Deployment a Cloud Run
-- [ ] Testing y validación
-- [ ] Documentación de usuario
+- [ ] Monitoreo y reentrenamiento automático
+
+---
+
+## 🚀 Inicio Rápido
+
+### 1. Setup Base de Datos
+```bash
+# Configurar .env con credenciales de PostgreSQL
+cp .env.example .env
+
+# Crear tablas
+python setup_database.py
+```
+
+### 2. Generar Datos Históricos
+```bash
+# Genera 120 órdenes históricas con tendencia y estacionalidad
+python seed_data.py
+```
+
+### 3. Entrenar Modelo
+```bash
+# Entrena modelo y genera predicciones para próximos 3 meses
+python train_model.py
+
+# Resultado esperado:
+# ✅ R² Test: 0.902 (90.2% precisión)
+# ✅ 42 predicciones guardadas en BD
+```
+
+### 4. Iniciar Aplicación
+```bash
+python app.py
+# Accede a: http://localhost:8000
+```
+
+---
+
+## 📚 Documentación Completa
+
+Este proyecto cuenta con documentación técnica exhaustiva:
+
+### Documentos Principales
+
+- **[CHANGELOG.md](CHANGELOG.md)** - Historial de versiones y cambios
+- **[BITACORA.md](BITACORA.md)** - Bitácora de desarrollo y decisiones técnicas
+
+### Documentación Técnica (`/docs`)
+
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Arquitectura del sistema con 5 diagramas Mermaid
+  - Diagrama de arquitectura general
+  - Flujo de datos (secuencia)
+  - Pipeline del modelo predictivo
+  - ERD de base de datos
+  - Flujo de deployment
+
+- **[API.md](docs/API.md)** - Documentación completa de endpoints REST
+  - Todos los endpoints con ejemplos
+  - Request/Response schemas
+  - Códigos de error
+  - Ejemplos con cURL
+
+- **[MODEL.md](docs/MODEL.md)** - Explicación técnica del modelo predictivo
+  - Features utilizadas (12 total)
+  - Proceso de entrenamiento
+  - Interpretación de métricas (R² 0.902)
+  - Limitaciones y mejoras futuras
 
 ---
 
@@ -148,4 +224,4 @@ agente-capstone/
 
 ---
 
-*Última actualización: 2025-12-28*
+*Última actualización: 2025-12-29*

@@ -12,12 +12,12 @@ load_dotenv()
 
 # Configuración de la base de datos
 DB_CONFIG = {
-    'host': 'db-capstonemia.c43jwggkkhqo.us-east-2.rds.amazonaws.com',
-    'port': 5432,
-    'database': 'postgres',
-    'user': os.getenv('DB_USER', 'postgres'),
+    'host': os.getenv('DB_HOST', 'db-capstonemia.c43jwggkkhqo.us-east-2.rds.amazonaws.com'),
+    'port': int(os.getenv('DB_PORT', '5432')),
+    'database': os.getenv('DB_NAME', 'agente_capstone_db'),
+    'user': os.getenv('DB_USER', 'agente_app'),
     'password': os.getenv('DB_PASSWORD', ''),
-    'region': 'us-east-2'
+    'region': os.getenv('DB_REGION', 'us-east-2')
 }
 
 # URL JDBC (para referencia)
@@ -37,7 +37,8 @@ def get_engine():
         pool_pre_ping=True,  # Verifica conexiones antes de usar
         pool_size=10,
         max_overflow=20,
-        echo=False  # Cambiar a True para debug SQL
+        echo=False,  # Cambiar a True para debug SQL
+        connect_args={'sslmode': 'require'}  # AWS RDS requiere SSL
     )
     return engine
 
@@ -57,7 +58,8 @@ def get_connection():
             port=DB_CONFIG['port'],
             database=DB_CONFIG['database'],
             user=DB_CONFIG['user'],
-            password=DB_CONFIG['password']
+            password=DB_CONFIG['password'],
+            sslmode='require'  # AWS RDS requiere SSL
         )
         return conn
     except Exception as e:

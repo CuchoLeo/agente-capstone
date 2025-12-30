@@ -38,6 +38,7 @@ wheels/
 # ChromaDB
 chroma_db/
 *.db
+*.sqlite
 
 # Google Cloud
 *.json
@@ -45,8 +46,21 @@ chroma_db/
 
 # Logs
 *.log
-logs/
+logs/*.log
+!logs/.gitkeep
+
+# Models (ML)
+models/*.pkl
+models/*.h5
+models/*.pt
+!models/.gitkeep
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
